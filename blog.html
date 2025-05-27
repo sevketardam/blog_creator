@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>İçerik Oluşturucu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        #editorArea .content-block {
+            border: 1px solid #ced4da;
+            padding: 15px;
+            background-color: #fff;
+            position: relative;
+            min-height: 100px;
+            border-radius: 5px;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            cursor: pointer;
+            font-size: 20px;
+            color: red;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            flex-direction: row;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .toolbar button {
+            margin-right: 5px;
+        }
+
+        .sortable-placeholder {
+            background: #e0e0e0;
+            border: 2px dashed #999;
+            min-height: 100px;
+        }
+
+        .editable {
+            min-height: 100px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            padding: 0.5rem;
+            background-color: white;
+        }
+
+        .drag-handle {
+            cursor: grab;
+            font-size: 20px;
+            margin-right: 10px;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body class="p-4">
+
+    <div class="mb-3 row g-2 align-items-center">
+        <div class="col-auto">
+            <label for="colSize" class="col-form-label">Sutun (1-12):</label>
+        </div>
+        <div class="col-auto">
+            <input type="number" id="colSize" class="form-control" value="12" min="1" max="12">
+        </div>
+        <div class="col-auto ">
+            <button id="addText" class="btn btn-primary mb-2">Yazı Ekle</button>
+            <button id="addImage" class="btn btn-secondary mb-2">Resim Ekle</button>
+        </div>
+    </div>
+
+    <div id="editorArea" class="row g-3 mb-4"></div>
+
+    <h4 class="mb-2">🖼️ Canlı Önizleme</h4>
+    <div id="previewArea" class="row g-3"></div>
+
+    <div class="modal fade" id="linkModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bağlantı Ekle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="url" id="linkUrl" class="form-control" placeholder="https://example.com">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-primary" id="insertLinkBtn">Ekle</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let selectedEditable = null;
+        const contentBlocks = [];
+        const imageBlocks = [];
+
+        function getColSize() {
+            const col = parseInt($('#colSize').val());
+            if (isNaN(col) || col < 1 || col > 12) {
+                alert("1 ile 12 arasında bir sayı girin.");
+                return null;
+            }
+            return col;
+        }
+
+        function createRemoveButton() {
+            return `<span class="remove-btn" onclick="$(this).closest('.content-wrapper').remove(); updatePreview()">×</span>`;
+        }
+
+        function createToolbar() {
+            return `
+        <div class="toolbar">
+          <button class="btn btn-sm btn-dark" onclick="document.execCommand('bold', false, null)">B</button>
+          <button class="btn btn-sm btn-dark" onclick="document.execCommand('italic', false, null)"><i>I</i></button>
+          <button class="btn btn-sm btn-dark" onclick="document.execCommand('underline', false, null)"><u>U</u></button>
+          <button class="btn btn-sm btn-dark" onclick="openLinkModal(this)">Link</button>
+          <button class="btn btn-sm btn-dark" onclick="document.execCommand('insertUnorderedList')">Liste</button>
+          <button class="btn btn-sm btn-dark" onclick="document.execCommand('insertOrderedList')">Sıralı Liste</button>
+          <select class="form-select d-inline-block w-auto" onchange="document.execCommand('formatBlock', false, this.value)">
+            <option value="p">Paragraf</option>
+            <option value="h1">H1</option>
+            <option value="h2">H2</option>
+            <option value="h3">H3</option>
+            <option value="h4">H4</option>
+            <option value="h5">H5</option>
+            <option value="h6">H6</option>
+          </select>
+        </div>
+      `;
+        }
+
+        function createTextBlock(col) {
+            return `
+        <div class="col-md-${col} content-wrapper">
+          <div class="content-block">
+            <span class="drag-handle">☰</span>
+            ${createRemoveButton()}
+            ${createToolbar()}
+            <div contenteditable="true" class="editable" onfocus="selectedEditable=this" oninput="updatePreview()">Yazınızı buraya girin...</div>
+          </div>
+        </div>
+      `;
+        }
+
+        function createImageBlock(col) {
+            return `
+        <div class="col-md-${col} content-wrapper">
+          <div class="content-block">
+            <span class="drag-handle">☰</span>
+            ${createRemoveButton()}
+            <input type="file" accept="image/*" class="form-control mb-2 img-upload">
+            <img src="" class="img-fluid d-none img-preview" alt="Resim Önizleme">
+          </div>
+        </div>
+      `;
+        }
+
+        function openLinkModal(e) {
+            selectedEditable = $(e).closest('.content-block').find('.editable')[0];
+            const modal = new bootstrap.Modal(document.getElementById('linkModal'));
+            modal.show();
+        }
+
+        $('#insertLinkBtn').click(function () {
+            const url = $('#linkUrl').val();
+            console.log(selectedEditable)
+            if (url && selectedEditable) {
+                $(selectedEditable).append("<a href='" + url + "' target='_blank'>" + url + "</a>");
+            }
+            $('#linkUrl').val('');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('linkModal'));
+            modal.hide();
+            updatePreview()
+        });
+
+        function updatePreview() {
+            $('#previewArea').html('');
+            contentBlocks.length = 0;
+            imageBlocks.length = 0;
+            $('#editorArea .content-wrapper').each(function (i) {
+                const $this = $(this);
+                const clone = $this.clone();
+                clone.find('[contenteditable]').removeAttr('contenteditable').removeClass('editable');
+                clone.find('.toolbar, .remove-btn, .img-upload, .drag-handle').remove();
+                $('#previewArea').append(clone);
+
+                const colVal = ($this.closest('.content-wrapper').attr('class').match(/col-md-(\d+)/) || [])[1];
+                const editable = $this.find('.editable');
+
+                if (editable.length) {
+                    contentBlocks.push({ index: i, html: editable.html(), col: colVal });
+                }
+
+                const fileInput = $this.find('.img-upload')[0];
+                const file = fileInput?.files?.[0];
+                if (file) {
+                    imageBlocks.push({ index: i, file: file, col: colVal });
+                }
+            });
+        }
+
+        $(document).ready(function () {
+            $('#addText').click(function () {
+                const col = getColSize();
+                if (!col) return;
+                $('#editorArea').append(createTextBlock(col));
+                updatePreview();
+            });
+
+            $('#addImage').click(function () {
+                const col = getColSize();
+                if (!col) return;
+                $('#editorArea').append(createImageBlock(col));
+                updatePreview();
+            });
+
+            $('#editorArea').on('change', '.img-upload', function () {
+                const file = this.files[0];
+                const previewImg = $(this).siblings('.img-preview');
+
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        previewImg.attr('src', e.target.result).removeClass('d-none');
+
+                        setTimeout(updatePreview, 50);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    previewImg.addClass('d-none').attr('src', '');
+                    updatePreview();
+                }
+            });
+
+
+            $('#editorArea').sortable({
+                handle: '.drag-handle',
+                placeholder: 'sortable-placeholder',
+                cancel: '[contenteditable]',
+                update: function () {
+                    updatePreview();
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
